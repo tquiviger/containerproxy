@@ -93,7 +93,7 @@ public class ProxyMappingManager {
 		mappings.put(mapping, proxyId);
 		
 		String path = PROXY_INTERNAL_ENDPOINT + "/" + mapping;
-		pathHandler.addPrefixPath(path, new ProxyHandler(proxyClient, ResponseCodeHandler.HANDLE_404));
+		pathHandler.addPrefixPath(path, new ProxyHandler(proxyClient, -1, ResponseCodeHandler.HANDLE_404, true, false));
 	}
 
 	public synchronized void removeMapping(String mapping) {
