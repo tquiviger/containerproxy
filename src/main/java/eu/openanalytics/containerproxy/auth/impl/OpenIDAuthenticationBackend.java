@@ -24,9 +24,12 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 import javax.inject.Inject;
 
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.springframework.core.env.Environment;
 import org.springframework.security.config.annotation.authentication.builders.AuthenticationManagerBuilder;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -56,12 +59,14 @@ public class OpenIDAuthenticationBackend implements IAuthenticationBackend {
 
 	private static final String REG_ID = "shinyproxy";
 	private static final String ENV_TOKEN_NAME = "SHINYPROXY_OIDC_ACCESS_TOKEN";
-	
+
+	private Logger log = LogManager.getLogger(OpenIDAuthenticationBackend.class);
+
 	private OAuth2AuthorizedClientService authorizedClientService;
-	
+
 	@Inject
 	private Environment environment;
-	
+
 	@Override
 	public String getName() {
 		return NAME;
@@ -76,11 +81,11 @@ public class OpenIDAuthenticationBackend implements IAuthenticationBackend {
 	public void configureHttpSecurity(HttpSecurity http) throws Exception {
 		ClientRegistrationRepository clientRegistrationRepo = createClientRepo();
 		authorizedClientService = new InMemoryOAuth2AuthorizedClientService(clientRegistrationRepo);
-		
+
 		http
-			.authorizeRequests().anyRequest().authenticated()
-			.and()
-			.oauth2Login()
+				.authorizeRequests().anyRequest().authenticated()
+				.and()
+				.oauth2Login()
 				.loginPage("/login")
 				.clientRegistrationRepository(clientRegistrationRepo)
 				.authorizedClientService(authorizedClientService)
@@ -93,18 +98,18 @@ public class OpenIDAuthenticationBackend implements IAuthenticationBackend {
 	}
 
 	public String getLoginRedirectURI() {
-		return SessionHelper.getContextPath(environment, false) 
-				+ OAuth2AuthorizationRequestRedirectFilter.DEFAULT_AUTHORIZATION_REQUEST_BASE_URI 
+		return SessionHelper.getContextPath(environment, false)
+				+ OAuth2AuthorizationRequestRedirectFilter.DEFAULT_AUTHORIZATION_REQUEST_BASE_URI
 				+ "/" + REG_ID;
 	}
-	
+
 	@Override
 	public String getLogoutSuccessURL() {
 		String logoutURL = environment.getProperty("proxy.openid.logout-url");
 		if (logoutURL == null || logoutURL.trim().isEmpty()) logoutURL = IAuthenticationBackend.super.getLogoutSuccessURL();
 		return logoutURL;
 	}
-	
+
 	@Override
 	public void customizeContainerEnv(List<String> env) {
 		Authentication auth = SecurityContextHolder.getContext().getAuthentication();
@@ -113,21 +118,21 @@ public class OpenIDAuthenticationBackend implements IAuthenticationBackend {
 		OidcUser user = (OidcUser) auth.getPrincipal();
 		OAuth2AuthorizedClient client = authorizedClientService.loadAuthorizedClient(REG_ID, user.getName());
 		if (client == null || client.getAccessToken() == null) return;
-		
+
 		env.add(ENV_TOKEN_NAME + "=" + client.getAccessToken().getTokenValue());
 	}
-	
+
 	protected ClientRegistrationRepository createClientRepo() {
 		Set<String> scopes = new HashSet<>();
 		scopes.add("openid");
 		scopes.add("email");
-		
+
 		for (int i=0;;i++) {
 			String scope = environment.getProperty(String.format("proxy.openid.scopes[%d]", i));
 			if (scope == null) break;
 			else scopes.add(scope);
 		}
-		
+
 		ClientRegistration client = ClientRegistration.withRegistrationId(REG_ID)
 				.authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
 				.clientName(REG_ID)
@@ -140,10 +145,10 @@ public class OpenIDAuthenticationBackend implements IAuthenticationBackend {
 				.clientId(environment.getProperty("proxy.openid.client-id"))
 				.clientSecret(environment.getProperty("proxy.openid.client-secret"))
 				.build();
-		
+
 		return new InMemoryClientRegistrationRepository(Collections.singletonList(client));
 	}
-	
+
 	protected GrantedAuthoritiesMapper createAuthoritiesMapper() {
 		String rolesClaimName = environment.getProperty("proxy.openid.roles-claim");
 		if (rolesClaimName == null || rolesClaimName.isEmpty()) {
@@ -154,6 +159,17 @@ public class OpenIDAuthenticationBackend implements IAuthenticationBackend {
 				for (GrantedAuthority auth: authorities) {
 					if (auth instanceof OidcUserAuthority) {
 						OidcIdToken idToken = ((OidcUserAuthority) auth).getIdToken();
+
+						if (log.isDebugEnabled()) {
+							String lineSep = System.getProperty("line.separator");
+							String claims = idToken.getClaims().entrySet().stream()
+									.map(e -> String.format("%s -> %s", e.getKey(), e.getValue()))
+									.collect(Collectors.joining(lineSep));
+							log.debug(String.format("Checking for roles in claim '%s'. Available claims in ID token:%s%s",
+									rolesClaimName, lineSep, claims));
+
+						}
+
 						List<String> roles = idToken.getClaimAsStringList(rolesClaimName);
 						if (roles == null) continue;
 						for (String role: roles) {
