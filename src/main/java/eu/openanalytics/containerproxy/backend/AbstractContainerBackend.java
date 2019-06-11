@@ -23,6 +23,7 @@ package eu.openanalytics.containerproxy.backend;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.ArrayList;
@@ -124,11 +125,23 @@ public abstract class AbstractContainerBackend implements IContainerBackend {
 	
 	protected void doStartProxy(Proxy proxy) throws Exception {
 		for (ContainerSpec spec: proxy.getSpec().getContainerSpecs()) {
-			if (authBackend != null) authBackend.customizeContainer(spec);
-			ExpressionAwareContainerSpec eSpec = new ExpressionAwareContainerSpec(spec, proxy, expressionResolver);
-			Container c = startContainer(eSpec, proxy);
-			c.setSpec(spec);
-			proxy.getContainers().add(c);
+
+			Container container = null;
+
+			if (spec.isProxyManaged()) {
+				container = startContainer(spec, proxy);
+			}
+			else {
+				container = new Container();
+				container.setSpec(spec);
+				container.setId(UUID.randomUUID().toString());
+
+				String mapping = mappingStrategy.createMapping("default", container, proxy);
+				URI target = new URI(spec.getAppUrl());
+				proxy.getTargets().put(mapping, target);
+			}
+
+			proxy.getContainers().add(container);
 		}
 	}
 	

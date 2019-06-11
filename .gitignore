@@ -1,2 +1,5 @@
+.DS_Store
+.idea/
+containerproxy.iml
 /target/
 application.yml
